@@ -34,13 +34,12 @@ namespace App.Models
 
         public void LoginLog(bool succeeded, string login, int? user_id = null)
         {
-            var remote_addr = _httpContextAccessor.HttpContext.Connection.RemoteIpAddress.ToString();
             // Console.WriteLine("login_log: " + succeeded + ", " + login + "," + user_id);
             using (var conn = _dbFactory.CreateDbConnection())
             {
                 conn.Open();
                 conn.Execute("INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) VALUES (NOW(),@user_id,@login,@ip,@succeeded)",
-                    new { user_id = user_id, login = login, ip = remote_addr, succeeded = succeeded ? (byte)1 : (byte)0 });
+                    new { user_id = user_id, login = login, ip = GetRemoteAddress(), succeeded = succeeded ? (byte)1 : (byte)0 });
             }
         }
 
@@ -60,12 +59,11 @@ namespace App.Models
         }
         public bool IpBannded()
         {
-            var remote_addr = _httpContextAccessor.HttpContext.Connection.RemoteIpAddress.ToString();
             using (var conn = _dbFactory.CreateDbConnection())
             {
                 conn.Open();
                 var failures = conn.ExecuteScalar<int>("SELECT COUNT(1) AS failures FROM login_log WHERE ip = @ip AND id > IFNULL((select id from login_log where ip = @ip AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0)",
-                    new { ip = remote_addr });
+                    new { ip = GetRemoteAddress() });
                 return _threshold.IpBanThreshold <= failures;
             }
         }
@@ -181,6 +179,16 @@ namespace App.Models
                 }
                 return logins;
             }
+        }
+        private string GetRemoteAddress()
+        {
+            var ctx = _httpContextAccessor.HttpContext;
+            var xff = ctx.Request.Headers["X-Forwarded-For"];
+            if (xff.Count > 0)
+            {
+                return xff[0];
+            }
+            return ctx.Connection.RemoteIpAddress.ToString();
         }
     }
 }
